@@ -62,3 +62,14 @@ def total_groups():
     return cursor.execute(
         "SELECT COUNT(*) FROM groups"
     ).fetchone()[0]
+
+def all_users():
+    return cursor.execute(
+        "SELECT user_id FROM users"
+    ).fetchall()
+
+
+def all_groups():
+    return cursor.execute(
+        "SELECT group_id FROM groups"
+    ).fetchall()

@@ -116,21 +116,25 @@ async def ai_private(client, message):
     )
 
     wait = await message.reply_text(
-        "🤖 Thinking..."
+    "🤖 Thinking..."
+)
+
+try:
+    reply = ask_ai(message.text)
+
+    print("========== AI RESPONSE ==========")
+    print(reply)
+    print("=================================")
+
+    await wait.edit_text(str(reply))
+
+except Exception as e:
+
+    print("AI EXCEPTION:", e)
+
+    await wait.edit_text(
+        f"❌ AI Error:\n{str(e)}"
     )
-
-    try:
-        reply = ask_ai(
-            message.text
-        )
-
-        await wait.edit_text(reply)
-
-    except Exception as e:
-
-        await wait.edit_text(
-            f"❌ Error:\n{e}"
-        )
 
 
 @app.on_message(

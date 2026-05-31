@@ -1,8 +1,8 @@
-import os
 import google.generativeai as genai
+import os
 
 genai.configure(
-    api_key=os.getenv("GEMINI_API_KEY")
+    api_key=os.environ.get("GEMINI_API_KEY")
 )
 
 model = genai.GenerativeModel(
@@ -12,7 +12,12 @@ model = genai.GenerativeModel(
 def ask_ai(text):
     try:
         response = model.generate_content(text)
-        return response.text
+
+        if response.text:
+            return response.text
+
+        return "⚠️ Empty response."
 
     except Exception as e:
-        return f"❌ Gemini Error:\n{e}"
+        print(e)
+        return f"⚠️ AI Error:\n{e}"

@@ -58,8 +58,10 @@ def run_bot():
                         await asyncio.sleep(86400)
                         reset_old_strikes()
 
-                print("🔄 [BOT] Connecting to Telegram...", flush=True)
-                async with bot_app:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                print("🔄 [BOT] Importing main app...", flush=True)
+                    from main import app as bot_app
                     bot_status["running"] = True
                     bot_status["error"] = None
                     me = await bot_app.get_me()

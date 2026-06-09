@@ -42,8 +42,8 @@ app = Client(
 )
 
 # ── Anti-flood tracker ──────────────────────────────────────────────────────
-flood_tracker: dict[int, list] = {}
-duplicate_tracker: dict[int, list] = {}
+flood_tracker: dict = {}
+duplicate_tracker: dict = {}
 
 # ── Group AI keywords ───────────────────────────────────────────────────────
 GROUP_KEYWORDS = [
@@ -70,7 +70,6 @@ ABUSE_KEYWORDS = [
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_uptime() -> str:
-    """Return formatted bot uptime."""
     seconds = int(time.time() - START_TIME)
     days, rem = divmod(seconds, 86400)
     hours, rem = divmod(rem, 3600)
@@ -79,28 +78,20 @@ def get_uptime() -> str:
 
 
 async def is_subscribed(client: Client, user_id: int) -> bool:
-    """Check if user has joined the required channel."""
     try:
         channel_username = CHANNEL_LINK.split("/")[-1]
-        member = await client.get_chat_member(f"+{channel_username}" if channel_username.startswith("+") else channel_username, user_id)
+        if channel_username.startswith("+"):
+            # Private invite link — can't verify without being admin; allow
+            return True
+        member = await client.get_chat_member(channel_username, user_id)
         return member.status not in [ChatMemberStatus.BANNED, ChatMemberStatus.LEFT]
     except UserNotParticipant:
         return False
     except Exception:
-        # If we can't verify (e.g. private channel invite link), allow through
-        try:
-            # Try using channel hash from invite link
-            invite_hash = CHANNEL_LINK.split("+")[-1] if "+" in CHANNEL_LINK else None
-            if invite_hash:
-                # Can't verify private channel membership without joining - allow
-                return True
-        except Exception:
-            pass
         return True
 
 
 async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
-    """Check if user is admin or owner in a chat."""
     try:
         member = await client.get_chat_member(chat_id, user_id)
         return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
@@ -109,7 +100,6 @@ async def is_admin(client: Client, chat_id: int, user_id: int) -> bool:
 
 
 def force_subscribe_markup() -> InlineKeyboardMarkup:
-    """Inline keyboard for force subscribe message."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📢 Join Channel", url=CHANNEL_LINK),
@@ -120,7 +110,6 @@ def force_subscribe_markup() -> InlineKeyboardMarkup:
 
 
 def welcome_markup() -> InlineKeyboardMarkup:
-    """Inline keyboard for welcome message."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK),
@@ -139,7 +128,6 @@ async def start_command(client: Client, message: Message):
     user = message.from_user
     add_user(user.id, user.first_name or "User")
 
-    # Force subscribe check
     if not await is_subscribed(client, user.id):
         await message.reply_photo(
             photo=WELCOME_IMAGE,
@@ -192,7 +180,6 @@ async def handle_callbacks(client, callback_query):
                 "❌ Abhi join nahi kiya! Pehle join karo phir try karo.",
                 show_alert=True
             )
-
     elif data == "start_chat":
         await callback_query.answer("💬 Apna sawaal type karo!", show_alert=False)
 
@@ -201,12 +188,13 @@ async def handle_callbacks(client, callback_query):
 # PRIVATE CHAT — AI RESPONSE
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.on_message(filters.private & filters.text & ~filters.command(["start", "stats", "broadcast", "gbroadcast", "strikes", "resetstrikes", "warns"]))
+@app.on_message(filters.private & filters.text & ~filters.command(
+    ["start", "stats", "broadcast", "gbroadcast", "strikes", "resetstrikes", "warns"]
+))
 async def private_ai_chat(client: Client, message: Message):
     user = message.from_user
     add_user(user.id, user.first_name or "User")
 
-    # Force subscribe check on every message
     if not await is_subscribed(client, user.id):
         await message.reply(
             "🚫 **Pehle join karo, bhai!**\n\nBot use karne ke liye channel & group join karna zaroori hai.",
@@ -214,16 +202,13 @@ async def private_ai_chat(client: Client, message: Message):
         )
         return
 
-    # Typing indicator
     await client.send_chat_action(message.chat.id, "typing")
-
-    # Processing message
     processing_msg = await message.reply("⚡ _Processing..._")
 
     try:
         response = await get_ai_response(message.text)
         await processing_msg.edit_text(response)
-    except Exception as e:
+    except Exception:
         await processing_msg.edit_text(
             "😅 Bhai, kuch technical issue aa gaya. Thoda baad mein try karo!"
         )
@@ -242,7 +227,6 @@ async def group_handler(client: Client, message: Message):
     user_id = message.from_user.id
     text = message.text.lower()
 
-    # Register group & user
     add_group(chat_id, message.chat.title or "Group")
     add_user(user_id, message.from_user.first_name or "User")
 
@@ -258,8 +242,7 @@ async def group_handler(client: Client, message: Message):
             try:
                 await message.delete()
                 await message.reply(
-                    f"⚠️ {message.from_user.mention} bhai, **itna fast mat bhejo!** "
-                    "Thoda slow down karo. 🙏"
+                    f"⚠️ {message.from_user.mention} bhai, **itna fast mat bhejo!** Thoda slow down karo. 🙏"
                 )
             except Exception:
                 pass
@@ -284,13 +267,11 @@ async def group_handler(client: Client, message: Message):
 
     # ── Link spam detection ─────────────────────────────────────────────
     link_pattern = re.compile(r"(https?://|t\.me/|@\w+)")
-    links_found = link_pattern.findall(message.text)
-    if len(links_found) > 3 and not await is_admin(client, chat_id, user_id):
+    if len(link_pattern.findall(message.text)) > 3 and not await is_admin(client, chat_id, user_id):
         try:
             await message.delete()
             await message.reply(
-                f"🚫 {message.from_user.mention}, **itne saare links mat bhejo!** "
-                "Spam allowed nahi hai. ⚠️"
+                f"🚫 {message.from_user.mention}, **itne saare links mat bhejo!** Spam allowed nahi hai. ⚠️"
             )
         except Exception:
             pass
@@ -298,10 +279,7 @@ async def group_handler(client: Client, message: Message):
 
     # ── AI Moderation ───────────────────────────────────────────────────
     if not await is_admin(client, chat_id, user_id):
-        # Quick keyword check first
         is_abuse = any(kw in text.split() for kw in ABUSE_KEYWORDS)
-
-        # AI check if not caught by keyword
         if not is_abuse:
             is_abuse = await is_abusive_message(message.text)
 
@@ -314,7 +292,6 @@ async def group_handler(client: Client, message: Message):
             strikes = add_strike(user_id, chat_id)
             log_moderation(user_id, chat_id, message.text[:200], strikes)
 
-            # Strike messages
             strike_messages = {
                 1: ("⚠️ **Warning 1/5**\n\nBhai, respectful language use karo please. 🙏", False),
                 2: ("⚠️ **Warning 2/5**\n\nAbusive language se bacho. Aage rules break hua toh action liya jayega.", False),
@@ -325,10 +302,7 @@ async def group_handler(client: Client, message: Message):
 
             strike_level = min(strikes, 5)
             warn_text, do_mute = strike_messages[strike_level]
-
-            await message.reply(
-                f"{message.from_user.mention}\n\n{warn_text}"
-            )
+            await message.reply(f"{message.from_user.mention}\n\n{warn_text}")
 
             if do_mute:
                 try:
@@ -340,9 +314,7 @@ async def group_handler(client: Client, message: Message):
                     )
                     reset_strikes(user_id, chat_id)
                 except (ChatAdminRequired, UserAdminInvalid):
-                    await message.reply(
-                        "⚠️ Bot ko admin rights chahiye mute karne ke liye!"
-                    )
+                    await message.reply("⚠️ Bot ko admin rights chahiye mute karne ke liye!")
             return
 
     # ── Group AI Reply ──────────────────────────────────────────────────
@@ -377,24 +349,19 @@ async def group_handler(client: Client, message: Message):
 # ADMIN COMMANDS
 # ═══════════════════════════════════════════════════════════════════════════
 
-@app.on_message(filters.command("stats") & filters.user(OWNER_ID))
+@app.on_message(filters.command("stats") & filters.user([OWNER_ID]))
 async def stats_command(client: Client, message: Message):
-    users = get_user_count()
-    groups = get_group_count()
-    total_strikes = get_total_strikes()
-    uptime = get_uptime()
-
     await message.reply(
         "📊 **Prime X Assistant — Stats**\n\n"
-        f"👥 **Total Users:** `{users}`\n"
-        f"🏘️ **Total Groups:** `{groups}`\n"
-        f"⚠️ **Total Strikes:** `{total_strikes}`\n"
-        f"⏱️ **Uptime:** `{uptime}`\n\n"
+        f"👥 **Total Users:** `{get_user_count()}`\n"
+        f"🏘️ **Total Groups:** `{get_group_count()}`\n"
+        f"⚠️ **Total Strikes:** `{get_total_strikes()}`\n"
+        f"⏱️ **Uptime:** `{get_uptime()}`\n\n"
         f"👑 Owner: @PREMGUPTA2M"
     )
 
 
-@app.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+@app.on_message(filters.command("broadcast") & filters.user([OWNER_ID]))
 async def broadcast_command(client: Client, message: Message):
     if not message.reply_to_message:
         await message.reply("📢 Jo message broadcast karna hai usse **reply** karke `/broadcast` use karo.")
@@ -403,7 +370,6 @@ async def broadcast_command(client: Client, message: Message):
     broadcast_msg = message.reply_to_message
     users = get_all_users()
     success, failed = 0, 0
-
     status_msg = await message.reply(f"📤 Broadcasting to `{len(users)}` users...")
 
     for user_id in users:
@@ -417,13 +383,11 @@ async def broadcast_command(client: Client, message: Message):
             failed += 1
 
     await status_msg.edit_text(
-        f"✅ **Broadcast Complete!**\n\n"
-        f"✔️ Success: `{success}`\n"
-        f"❌ Failed: `{failed}`"
+        f"✅ **Broadcast Complete!**\n\n✔️ Success: `{success}`\n❌ Failed: `{failed}`"
     )
 
 
-@app.on_message(filters.command("gbroadcast") & filters.user(OWNER_ID))
+@app.on_message(filters.command("gbroadcast") & filters.user([OWNER_ID]))
 async def gbroadcast_command(client: Client, message: Message):
     if not message.reply_to_message:
         await message.reply("📢 Jo message broadcast karna hai usse **reply** karke `/gbroadcast` use karo.")
@@ -432,7 +396,6 @@ async def gbroadcast_command(client: Client, message: Message):
     broadcast_msg = message.reply_to_message
     groups = get_all_groups()
     success, failed = 0, 0
-
     status_msg = await message.reply(f"📤 Broadcasting to `{len(groups)}` groups...")
 
     for group_id in groups:
@@ -446,21 +409,17 @@ async def gbroadcast_command(client: Client, message: Message):
             failed += 1
 
     await status_msg.edit_text(
-        f"✅ **Group Broadcast Complete!**\n\n"
-        f"✔️ Success: `{success}`\n"
-        f"❌ Failed: `{failed}`"
+        f"✅ **Group Broadcast Complete!**\n\n✔️ Success: `{success}`\n❌ Failed: `{failed}`"
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STRIKE / MODERATION COMMANDS
+# STRIKE COMMANDS
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.on_message(filters.command("strikes"))
 async def strikes_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    strikes = get_strikes(user_id, chat_id)
+    strikes = get_strikes(message.from_user.id, message.chat.id)
     await message.reply(
         f"⚠️ **Strike Status**\n\n"
         f"👤 User: {message.from_user.mention}\n"
@@ -474,7 +433,6 @@ async def reset_strikes_command(client: Client, message: Message):
     if not await is_admin(client, message.chat.id, message.from_user.id):
         await message.reply("❌ Sirf admins yeh command use kar sakte hain.")
         return
-
     target = message.reply_to_message.from_user if message.reply_to_message else message.from_user
     reset_strikes(target.id, message.chat.id)
     await message.reply(f"✅ {target.mention} ke strikes reset kar diye gaye!")
@@ -485,22 +443,16 @@ async def warns_command(client: Client, message: Message):
     if not await is_admin(client, message.chat.id, message.from_user.id):
         await message.reply("❌ Sirf admins yeh command use kar sakte hain.")
         return
-
     logs = get_moderation_logs(message.chat.id, limit=10)
     if not logs:
         await message.reply("✅ Koi moderation logs nahi mili.")
         return
-
     log_text = "📋 **Recent Moderation Logs**\n\n"
-    for user_id, content, strike, ts in logs:
+    for uid, content, strike, ts in logs:
         log_text += (
-            f"👤 User: `{user_id}`\n"
-            f"⚠️ Strike: `{strike}`\n"
-            f"💬 Message: _{content[:60]}..._\n"
-            f"🕐 Time: `{ts}`\n"
-            "──────────────\n"
+            f"👤 User: `{uid}`\n⚠️ Strike: `{strike}`\n"
+            f"💬 Message: _{content[:60]}..._\n🕐 Time: `{ts}`\n──────────────\n"
         )
-
     await message.reply(log_text)
 
 
@@ -519,47 +471,12 @@ async def new_member_handler(client: Client, message: Message):
                 "👋 **Hello Everyone!**\n\n"
                 "Main hoon **Prime X Assistant** — ab is group mein aa gaya hoon!\n\n"
                 "✅ **Kya kar sakta hoon:**\n"
-                "• AI-powered answers\n"
-                "• Group moderation\n"
-                "• Anti-spam & anti-flood\n"
-                "• Strike system\n\n"
-                "📢 Channel: [Join Karo]({})\n"
-                "💬 Main Group: [Join Karo]({})\n\n"
-                "👑 Owner: @PREMGUPTA2M".format(CHANNEL_LINK, GROUP_LINK),
+                "• AI-powered answers\n• Group moderation\n"
+                "• Anti-spam & anti-flood\n• Strike system\n\n"
+                f"📢 Channel: [Join Karo]({CHANNEL_LINK})\n"
+                f"💬 Main Group: [Join Karo]({GROUP_LINK})\n\n"
+                "👑 Owner: @PREMGUPTA2M",
                 disable_web_page_preview=True
             )
         else:
-            # Welcome new human members
             add_user(member.id, member.first_name or "User")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# MAIN ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════
-
-async def periodic_cleanup():
-    """Reset strikes older than 30 days — runs every 24 hours."""
-    while True:
-        await asyncio.sleep(86400)
-        reset_old_strikes()
-
-
-async def main():
-    init_db()
-    print("✅ Database initialized.")
-    print("🚀 Starting Prime X Assistant...")
-
-    # Start keep_alive Flask server
-    from keep_alive import keep_alive
-    keep_alive()
-
-    async with app:
-        print("✅ Prime X Assistant is running!")
-        print(f"👑 Owner: @PREMGUPTA2M")
-        # Start background task
-        asyncio.create_task(periodic_cleanup())
-        await asyncio.Event().wait()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

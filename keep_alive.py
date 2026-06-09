@@ -45,6 +45,11 @@ def run_bot():
             print("✅ [BOT] Database imported.", flush=True)
 
             print("🔄 [BOT] Importing main app...", flush=True)
+            import asyncio
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
             from main import app as bot_app
             print("✅ [BOT] Main app imported.", flush=True)
 

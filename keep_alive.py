@@ -91,3 +91,5 @@ def run_server():
     port = int(os.environ.get("PORT", 10000))
     print(f"🌐 Flask on port {port}", flush=True)
     flask_app.run(host="0.0.0.0", port=port, threaded=True)
+    if __name__ == "__main__":
+    run_server()
